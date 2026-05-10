@@ -116,134 +116,186 @@ function DashboardComponent(app) {
     const tasks = DB.getTasks(username);
     const div = document.createElement('div');
     
-    // Nové UI s plátnem pro papírky
+    // Klasické UI, ale přidali jsme id="drop-active" a z-index
     div.innerHTML = `
-        <div class="main-ui">
+        <div style="position: relative; z-index: 10;">
             <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
-                <h3 style="margin: 0;">Ahoj, ${username}! 🌪️</h3>
+                <h3 style="margin: 0;">Ahoj, ${username}!</h3>
                 <button class="btn-link" style="width:auto; margin: 0; padding: 0;" id="logout">Odhlásit</button>
             </div>
-            <p style="font-size: 0.8em; color: #888; margin-bottom: 15px;">
-                Napiš úkol a zmáčkni Enter. Splněný úkol drapni myší a hoď do skartovačky!
-            </p>
-            <div style="display: flex; gap: 10px;">
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 30px;">
                 <input type="text" id="new-task" placeholder="Co je třeba udělat?" style="margin: 0;">
-                <button class="btn-primary" id="add-t" style="width: auto; margin: 0;">Vystřelit úkol</button>
+                <button class="btn-primary" id="add-t" style="width: auto; margin: 0; white-space: nowrap;">Přidat</button>
+            </div>
+
+            <div id="drop-active" class="drop-zone" style="padding: 10px; min-height: 80px;">
+                <h4 style="color: #4a90e2; border-bottom: 1px solid #eee; padding-bottom: 5px;">Aktivní úkoly (Přetáhni sem nápad!)</h4>
+                <div class="list" id="active-tasks"></div>
+            </div>
+            
+            <div id="completed-tasks" style="margin-top: 30px; padding: 10px;">
+                <h4 style="color: #888; border-bottom: 1px solid #eee; padding-bottom: 5px;">Dokončené</h4>
+                <div class="list"></div>
             </div>
         </div>
-
-        <div id="shredder" class="shredder">
-            <span style="font-size: 2em; margin-bottom: 5px;">🗑️</span>
-            Skartace
-        </div>
-        <div id="task-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 1;"></div>
+        
+        <div id="ideas-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 1; overflow: hidden;"></div>
     `;
 
-    const canvas = div.querySelector('#task-canvas');
-    const shredder = div.querySelector('#shredder');
-    const input = div.querySelector('#new-task');
+    const activeCont = div.querySelector('#active-tasks');
+    const completedCont = div.querySelector('#completed-tasks .list');
 
-    // Super barvičky pro sticky notes
-    const colors = ['#ffeb3b', '#ffc107', '#8bc34a', '#03a9f4', '#ff5722', '#e91e63'];
+    // 1. VYKRESLENÍ KLASICKÝCH ÚKOLŮ (tvůj původní kód s přidáním smazání a enteru)
+    const activeTasks = tasks.filter(t => !t.done);
+    const completedTasks = tasks.filter(t => t.done);
 
-    // Vykreslení všech neskartovaných úkolů na jejich uložených pozicích
+    if (activeTasks.length === 0) activeCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Žádné aktivní úkoly. Přetáhni nějaký z okolí!</p>';
+    if (completedTasks.length === 0) completedCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Zatím nic dokončeno.</p>';
+
     tasks.forEach((t) => {
-        if (t.done) return; // Neskartované úkoly žijí na plátně
-
-        const note = document.createElement('div');
-        note.className = 'sticky-note';
+        const item = document.createElement('div');
+        item.className = 'task-item';
         
-        // Zajištění zpětné kompatibility pro staré úkoly (vygenerujeme jim data)
-        t.color = t.color || colors[Math.floor(Math.random() * colors.length)];
-        t.x = t.x !== undefined ? t.x : Math.random() * (window.innerWidth - 200) + 50;
-        t.y = t.y !== undefined ? t.y : Math.random() * (window.innerHeight - 200) + 50;
-        t.rot = t.rot !== undefined ? t.rot : (Math.random() - 0.5) * 40;
+        item.innerHTML = `
+            <span class="${t.done ? 'done' : ''}">${t.text}</span> 
+            <div style="display:flex; gap: 5px;">
+                <button class="toggle-btn" style="width:auto; padding:5px 10px; background:${t.done ? '#888' : '#28a745'}; color:white; margin:0;">
+                    ${t.done ? 'Vrátit' : 'Hotovo ✓'}
+                </button>
+                <button class="del-btn" style="width:auto; padding:5px 10px; background:#d0021b; color:white; margin:0;">✕</button>
+            </div>
+        `;
 
-        note.style.backgroundColor = t.color;
-        note.style.left = `${t.x}px`;
-        note.style.top = `${t.y}px`;
-        note.style.transform = `rotate(${t.rot}deg)`;
-        note.innerHTML = `<span>${t.text}</span>`;
-
-        // 🎯 DRAG & DROP LOGIKA
-        note.onmousedown = (e) => {
-            let startX = e.clientX;
-            let startY = e.clientY;
-            let initialX = parseFloat(note.style.left) || 0;
-            let initialY = parseFloat(note.style.top) || 0;
-
-            const onMouseMove = (moveEvent) => {
-                const dx = moveEvent.clientX - startX;
-                const dy = moveEvent.clientY - startY;
-                note.style.left = `${initialX + dx}px`;
-                note.style.top = `${initialY + dy}px`;
-
-                // Detekce kolize se skartovačkou
-                const shRect = shredder.getBoundingClientRect();
-                const noteRect = note.getBoundingClientRect();
-                
-                // Pokud je papírek "nad" skartovačkou, skartovačka zčervená a začne se třást
-                if (
-                    noteRect.right > shRect.left + 20 && 
-                    noteRect.left < shRect.right - 20 && 
-                    noteRect.bottom > shRect.top + 20 && 
-                    noteRect.top < shRect.bottom - 20
-                ) {
-                    shredder.classList.add('danger');
-                } else {
-                    shredder.classList.remove('danger');
-                }
-            };
-
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-                
-                // Aktualizace pozice úkolu
-                t.x = parseFloat(note.style.left);
-                t.y = parseFloat(note.style.top);
-
-                // SKARTACE!
-                if (shredder.classList.contains('danger')) {
-                    shredder.classList.remove('danger');
-                    t.done = true; // Označíme jako hotový (skartovaný)
-                    DB.saveTasks(username, tasks);
-                    app.render(); // Zmizí z obrazovky
-                } else {
-                    // Jen se uložila nová pozice, pokud jsme ho neskartovali
-                    DB.saveTasks(username, tasks);
-                }
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+        item.querySelector('.toggle-btn').onclick = () => {
+            const taskIndex = tasks.indexOf(t);
+            tasks[taskIndex].done = !tasks[taskIndex].done;
+            DB.saveTasks(username, tasks);
+            app.render(); 
         };
 
-        canvas.appendChild(note);
+        item.querySelector('.del-btn').onclick = () => {
+            const taskIndex = tasks.indexOf(t);
+            tasks.splice(taskIndex, 1);
+            DB.saveTasks(username, tasks);
+            app.render();
+        };
+
+        if (t.done) completedCont.appendChild(item);
+        else activeCont.appendChild(item);
     });
 
-    // Přidání nového úkolu (vygeneruje mu to náhodné hodnoty pro spawn)
+    // Klasické přidávání úkolů
+    const input = div.querySelector('#new-task');
     const addTask = () => {
         if (input.value.trim() !== "") {
-            tasks.push({ 
-                text: input.value, 
-                done: false,
-                // Spawnne se náhodně blízko středu obrazovky
-                x: (window.innerWidth / 2) - 75 + (Math.random() - 0.5) * 200,
-                y: (window.innerHeight / 2) - 75 + (Math.random() - 0.5) * 200,
-                rot: (Math.random() - 0.5) * 50, // Náhodné naklonění
-                color: colors[Math.floor(Math.random() * colors.length)]
-            });
+            tasks.push({ text: input.value, done: false });
             DB.saveTasks(username, tasks);
             app.render();
         }
     };
-    
     div.querySelector('#add-t').onclick = addTask;
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
     div.querySelector('#logout').onclick = () => app.handleLogout();
 
+    // --- 2. DRAG & DROP LOGIKA ---
+    const dropZone = div.querySelector('#drop-active');
+    
+    // Povolíme přesunutí nad zónou
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); 
+        dropZone.classList.add('dragover');
+    });
+
+    // Odebrání zvýraznění, když odjedeme myší
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    // Akce při upuštění nápadu!
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        
+        // Získáme text z přejeté bubliny
+        const draggedIdeaText = e.dataTransfer.getData('text/plain');
+        if (draggedIdeaText) {
+            tasks.push({ text: draggedIdeaText, done: false });
+            DB.saveTasks(username, tasks);
+            app.render(); // Překreslíme, čímž se nápad zařadí a bubliny se vygenerují znovu
+        }
+    });
+
+// --- 3. GENEROVÁNÍ LÉTAJÍCÍCH NÁPADŮ NA POZADÍ (Z JSONu) ---
+    const canvas = div.querySelector('#ideas-canvas');
+    
+    // Asynchronní načtení dat ze souboru ideas.json
+    fetch('ideas.json')
+        .then(response => response.json())
+        .then(funnyIdeas => {
+            // Vytvoříme 4 náhodné nápady jakmile se data načtou
+            for(let i = 0; i < 4; i++) {
+                const ideaText = funnyIdeas[Math.floor(Math.random() * funnyIdeas.length)];
+                const ideaEl = document.createElement('div');
+                ideaEl.className = 'floating-idea';
+                ideaEl.innerText = ideaText;
+                
+                ideaEl.draggable = true;
+                ideaEl.style.pointerEvents = 'auto'; 
+                
+                const isLeft = Math.random() > 0.5;
+                const xPos = isLeft ? (Math.random() * 15) + 5 : (Math.random() * 15) + 75; 
+                const yPos = (Math.random() * 80) + 10; 
+                
+                ideaEl.style.left = `${xPos}vw`;
+                ideaEl.style.top = `${yPos}vh`;
+                ideaEl.style.animationDelay = `${Math.random() * 2}s`;
+
+                ideaEl.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', ideaText);
+                });
+
+                canvas.appendChild(ideaEl);
+            }
+        })
+        .catch(error => {
+            console.error("Jejda, nápady se nepodařilo načíst:", error);
+        });
+
+    return div;
+
+    // Vytvoříme 4 náhodné nápady
+    for(let i = 0; i < 4; i++) {
+        const ideaText = funnyIdeas[Math.floor(Math.random() * funnyIdeas.length)];
+        const ideaEl = document.createElement('div');
+        ideaEl.className = 'floating-idea';
+        ideaEl.innerText = ideaText;
+        
+        // Nastavíme jako tažitelné (Draggable API)
+        ideaEl.draggable = true;
+        ideaEl.style.pointerEvents = 'auto'; // Aby na to šlo kliknout přes canvas
+        
+        // Rozmístíme je náhodně buď doleva, nebo doprava (aby nepřekážely aplikaci uprostřed)
+        const isLeft = Math.random() > 0.5;
+        const xPos = isLeft ? (Math.random() * 15) + 5 : (Math.random() * 15) + 75; // Procenta šířky okna
+        const yPos = (Math.random() * 80) + 10; // Procenta výšky okna
+        
+        ideaEl.style.left = `${xPos}vw`;
+        ideaEl.style.top = `${yPos}vh`;
+        
+        // Zpoždění animace, aby se nevlnily stejně
+        ideaEl.style.animationDelay = `${Math.random() * 2}s`;
+
+        // Při začátku tažení si uložíme text nápadu do DataTransfer objektu
+        ideaEl.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', ideaText);
+        });
+
+        canvas.appendChild(ideaEl);
+    }
+
     return div;
 }
+
 // Spuštění aplikace po načtení stránky
 window.onload = () => new TaskApp();
