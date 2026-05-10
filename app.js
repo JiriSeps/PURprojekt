@@ -1,36 +1,81 @@
 /**
- * VRSTVA 1: DATA SERVICE (Práce s LocalStorage - simulace databáze)
+ * --- PUR POŽADAVEK: Vlastní Webová Komponenta (Date Picker) ---
+ */
+class CustomDatepicker extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this.value = "";
+    }
+
+    connectedCallback() {
+        this.render();
+    }
+
+    getValue() {
+        return this.shadowRoot.getElementById('dp-input').value;
+    }
+
+    render() {
+        this.shadowRoot.innerHTML = `
+            <style>
+                :host { display: inline-block; width: 100%; }
+                .dp-container { position: relative; }
+                input {
+                    width: 100%;
+                    padding: 14px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    box-sizing: border-box;
+                    font-size: 14px;
+                    font-family: inherit;
+                    cursor: pointer;
+                    background: #fff;
+                    transition: 0.3s;
+                }
+                input:focus {
+                    outline: none;
+                    border-color: #3b82f6;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+                }
+            </style>
+            <div class="dp-container">
+                <input type="date" id="dp-input">
+            </div>
+        `;
+    }
+}
+customElements.define('custom-datepicker', CustomDatepicker);
+
+/**
+ * VRSTVA 1: DATA SERVICE
  */
 const DB = {
-    // Správa uživatelů
     getUsers: () => JSON.parse(localStorage.getItem('sys_users') || '[]'),
     saveUser: (user) => {
         const users = DB.getUsers();
         users.push(user);
         localStorage.setItem('sys_users', JSON.stringify(users));
     },
-    // Správa úkolů vázaných na konkrétní jméno
     getTasks: (username) => JSON.parse(localStorage.getItem(`tasks_${username}`) || '[]'),
     saveTasks: (username, tasks) => localStorage.setItem(`tasks_${username}`, JSON.stringify(tasks))
 };
 
 /**
- * VRSTVA 2: HLAVNÍ LOGIKA APLIKACE (State Management)
+ * VRSTVA 2: HLAVNÍ LOGIKA APLIKACE
  */
 class TaskApp {
     constructor() {
         this.root = document.getElementById('app-root');
-        this.currentUser = sessionStorage.getItem('active_user'); // Simulace "session"
-        this.view = 'login'; // Možné stavy: login | register | dashboard
+        this.currentUser = sessionStorage.getItem('active_user');
+        this.view = 'login';
         this.render();
     }
 
     handleRegister(username, password) {
         if (!username || !password) return "Vyplňte jméno i heslo!";
-        
         const users = DB.getUsers();
         if (users.find(u => u.username === username)) return "Uživatel již existuje!";
-        
         DB.saveUser({ username, password });
         this.view = 'login';
         this.render("Registrace byla úspěšná, nyní se můžete přihlásit.");
@@ -39,10 +84,9 @@ class TaskApp {
     handleLogin(username, password) {
         const users = DB.getUsers();
         const user = users.find(u => u.username === username && u.password === password);
-        
         if (user) {
             this.currentUser = username;
-            sessionStorage.setItem('active_user', username); // Uložení přihlášení
+            sessionStorage.setItem('active_user', username);
             this.view = 'dashboard';
             this.render();
         } else {
@@ -57,10 +101,8 @@ class TaskApp {
         this.render();
     }
 
-    // Centrální vykreslovací metoda
     render(msg = "") {
         this.root.innerHTML = "";
-        
         if (this.currentUser) {
             this.root.appendChild(DashboardComponent(this));
         } else if (this.view === 'register') {
@@ -74,7 +116,6 @@ class TaskApp {
 /**
  * VRSTVA 3: VIZUÁLNÍ KOMPONENTY
  */
-
 function LoginComponent(app, msg) {
     const div = document.createElement('div');
     div.innerHTML = `
@@ -116,7 +157,7 @@ function DashboardComponent(app) {
     const tasks = DB.getTasks(username);
     const div = document.createElement('div');
     
-    // Klasické UI, ale přidali jsme id="drop-active" a z-index
+    // UI upraveno pro Date Picker
     div.innerHTML = `
         <div style="position: relative; z-index: 10;">
             <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
@@ -124,9 +165,16 @@ function DashboardComponent(app) {
                 <button class="btn-link" style="width:auto; margin: 0; padding: 0;" id="logout">Odhlásit</button>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-bottom: 30px;">
-                <input type="text" id="new-task" placeholder="Co je třeba udělat?" style="margin: 0;">
-                <button class="btn-primary" id="add-t" style="width: auto; margin: 0; white-space: nowrap;">Přidat</button>
+            <div style="display: flex; gap: 10px; margin-bottom: 30px; align-items: flex-end;">
+                <div style="flex: 1;">
+                    <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">Název úkolu</p>
+                    <input type="text" id="new-task" placeholder="Co je třeba udělat?" style="margin: 0;">
+                </div>
+                <div style="width: 160px;">
+                    <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">Termín</p>
+                    <custom-datepicker id="new-deadline"></custom-datepicker>
+                </div>
+                <button class="btn-primary" id="add-t" style="height: 47px; margin: 0;">Přidat</button>
             </div>
 
             <div id="drop-active" class="drop-zone" style="padding: 10px; min-height: 80px;">
@@ -145,21 +193,38 @@ function DashboardComponent(app) {
 
     const activeCont = div.querySelector('#active-tasks');
     const completedCont = div.querySelector('#completed-tasks .list');
+    const input = div.querySelector('#new-task');
+    const datePickerEl = div.querySelector('#new-deadline');
 
-    // 1. VYKRESLENÍ KLASICKÝCH ÚKOLŮ (tvůj původní kód s přidáním smazání a enteru)
+    // 1. VYKRESLENÍ KLASICKÝCH ÚKOLŮ S DEADLINEM
     const activeTasks = tasks.filter(t => !t.done);
     const completedTasks = tasks.filter(t => t.done);
 
     if (activeTasks.length === 0) activeCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Žádné aktivní úkoly. Přetáhni nějaký z okolí!</p>';
     if (completedTasks.length === 0) completedCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Zatím nic dokončeno.</p>';
 
+    // Seřazení podle data (pokud datum chybí, hodí se na konec)
+    tasks.sort((a, b) => {
+        if (!a.deadline) return 1;
+        if (!b.deadline) return -1;
+        return a.deadline.localeCompare(b.deadline);
+    });
+
     tasks.forEach((t) => {
         const item = document.createElement('div');
         item.className = 'task-item';
         
+        // Pěkné formátování data
+        let formattedDeadline = "";
+        if (t.deadline) {
+            const dateParts = t.deadline.split('-');
+            formattedDeadline = `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}`;
+        }
+
         item.innerHTML = `
             <span class="${t.done ? 'done' : ''}">${t.text}</span> 
-            <div style="display:flex; gap: 5px;">
+            ${formattedDeadline ? `<span class="deadline" style="font-size: 0.85em; color: #ef4444; margin-left: 10px;">📅 ${formattedDeadline}</span>` : ''}
+            <div style="display:flex; gap: 5px; margin-left: 15px;">
                 <button class="toggle-btn" style="width:auto; padding:5px 10px; background:${t.done ? '#888' : '#28a745'}; color:white; margin:0;">
                     ${t.done ? 'Vrátit' : 'Hotovo ✓'}
                 </button>
@@ -186,10 +251,13 @@ function DashboardComponent(app) {
     });
 
     // Klasické přidávání úkolů
-    const input = div.querySelector('#new-task');
     const addTask = () => {
         if (input.value.trim() !== "") {
-            tasks.push({ text: input.value, done: false });
+            tasks.push({ 
+                text: input.value, 
+                done: false,
+                deadline: datePickerEl.getValue() // Přidání deadlinu
+            });
             DB.saveTasks(username, tasks);
             app.render();
         }
@@ -201,39 +269,34 @@ function DashboardComponent(app) {
     // --- 2. DRAG & DROP LOGIKA ---
     const dropZone = div.querySelector('#drop-active');
     
-    // Povolíme přesunutí nad zónou
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault(); 
         dropZone.classList.add('dragover');
     });
 
-    // Odebrání zvýraznění, když odjedeme myší
     dropZone.addEventListener('dragleave', () => {
         dropZone.classList.remove('dragover');
     });
 
-    // Akce při upuštění nápadu!
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         
-        // Získáme text z přejeté bubliny
         const draggedIdeaText = e.dataTransfer.getData('text/plain');
         if (draggedIdeaText) {
-            tasks.push({ text: draggedIdeaText, done: false });
+            // Drag and drop úkoly zatím nemají deadline
+            tasks.push({ text: draggedIdeaText, done: false, deadline: "" });
             DB.saveTasks(username, tasks);
-            app.render(); // Překreslíme, čímž se nápad zařadí a bubliny se vygenerují znovu
+            app.render(); 
         }
     });
 
-// --- 3. GENEROVÁNÍ LÉTAJÍCÍCH NÁPADŮ NA POZADÍ (Z JSONu) ---
+    // --- 3. GENEROVÁNÍ LÉTAJÍCÍCH NÁPADŮ NA POZADÍ (Z JSONu) ---
     const canvas = div.querySelector('#ideas-canvas');
     
-    // Asynchronní načtení dat ze souboru ideas.json
     fetch('ideas.json')
         .then(response => response.json())
         .then(funnyIdeas => {
-            // Vytvoříme 4 náhodné nápady jakmile se data načtou
             for(let i = 0; i < 4; i++) {
                 const ideaText = funnyIdeas[Math.floor(Math.random() * funnyIdeas.length)];
                 const ideaEl = document.createElement('div');
@@ -263,39 +326,6 @@ function DashboardComponent(app) {
         });
 
     return div;
-
-    // Vytvoříme 4 náhodné nápady
-    for(let i = 0; i < 4; i++) {
-        const ideaText = funnyIdeas[Math.floor(Math.random() * funnyIdeas.length)];
-        const ideaEl = document.createElement('div');
-        ideaEl.className = 'floating-idea';
-        ideaEl.innerText = ideaText;
-        
-        // Nastavíme jako tažitelné (Draggable API)
-        ideaEl.draggable = true;
-        ideaEl.style.pointerEvents = 'auto'; // Aby na to šlo kliknout přes canvas
-        
-        // Rozmístíme je náhodně buď doleva, nebo doprava (aby nepřekážely aplikaci uprostřed)
-        const isLeft = Math.random() > 0.5;
-        const xPos = isLeft ? (Math.random() * 15) + 5 : (Math.random() * 15) + 75; // Procenta šířky okna
-        const yPos = (Math.random() * 80) + 10; // Procenta výšky okna
-        
-        ideaEl.style.left = `${xPos}vw`;
-        ideaEl.style.top = `${yPos}vh`;
-        
-        // Zpoždění animace, aby se nevlnily stejně
-        ideaEl.style.animationDelay = `${Math.random() * 2}s`;
-
-        // Při začátku tažení si uložíme text nápadu do DataTransfer objektu
-        ideaEl.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', ideaText);
-        });
-
-        canvas.appendChild(ideaEl);
-    }
-
-    return div;
 }
 
-// Spuštění aplikace po načtení stránky
 window.onload = () => new TaskApp();
