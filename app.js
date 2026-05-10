@@ -116,112 +116,134 @@ function DashboardComponent(app) {
     const tasks = DB.getTasks(username);
     const div = document.createElement('div');
     
+    // Nové UI s plátnem pro papírky
     div.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="margin: 0;">Ahoj, ${username}!</h3>
-            <button class="btn-link" style="width:auto; margin: 0; padding: 0;" id="logout">Odhlásit</button>
-        </div>
-        
-        <div style="display: flex; gap: 10px; margin-bottom: 30px;">
-            <input type="text" id="new-task" placeholder="Co je třeba udělat?" style="margin: 0;">
-            <button class="btn-primary" id="add-t" style="width: auto; margin: 0; white-space: nowrap;">Přidat</button>
+        <div class="main-ui">
+            <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">Ahoj, ${username}! 🌪️</h3>
+                <button class="btn-link" style="width:auto; margin: 0; padding: 0;" id="logout">Odhlásit</button>
+            </div>
+            <p style="font-size: 0.8em; color: #888; margin-bottom: 15px;">
+                Napiš úkol a zmáčkni Enter. Splněný úkol drapni myší a hoď do skartovačky!
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="new-task" placeholder="Co je třeba udělat?" style="margin: 0;">
+                <button class="btn-primary" id="add-t" style="width: auto; margin: 0;">Vystřelit úkol</button>
+            </div>
         </div>
 
-        <div id="active-tasks">
-            <h4 style="color: #4a90e2; border-bottom: 1px solid #eee; padding-bottom: 5px;">Aktivní úkoly</h4>
-            <div class="list"></div>
+        <div id="shredder" class="shredder">
+            <span style="font-size: 2em; margin-bottom: 5px;">🗑️</span>
+            Skartace
         </div>
-        
-        <div id="completed-tasks" style="margin-top: 30px;">
-            <h4 style="color: #888; border-bottom: 1px solid #eee; padding-bottom: 5px;">Dokončené</h4>
-            <div class="list"></div>
-        </div>
+        <div id="task-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 1;"></div>
     `;
 
-    const activeCont = div.querySelector('#active-tasks .list');
-    const completedCont = div.querySelector('#completed-tasks .list');
-
-    // Rozdělení úkolů na aktivní a dokončené
-    const activeTasks = tasks.filter(t => !t.done);
-    const completedTasks = tasks.filter(t => t.done);
-
-    // Pokud nejsou žádné úkoly, zobrazíme zprávu
-    if (activeTasks.length === 0) activeCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Žádné aktivní úkoly. Skvělá práce!</p>';
-    if (completedTasks.length === 0) completedCont.innerHTML = '<p style="color:#aaa; font-size:0.9em;">Zatím nic dokončeno.</p>';
-
-tasks.forEach((t) => {
-        const item = document.createElement('div');
-        item.className = 'task-item';
-        
-        // Upgraded HTML to include a Delete button
-        item.innerHTML = `
-            <span class="${t.done ? 'done' : ''}">${t.text}</span> 
-            <div style="display:flex; gap: 5px;">
-                <button class="toggle-btn" style="width:auto; padding:5px 10px; background:${t.done ? '#888' : '#28a745'}; color:white; margin:0;">
-                    ${t.done ? 'Vrátit zpět' : 'Hotovo ✓'}
-                </button>
-                <button class="del-btn" style="width:auto; padding:5px 10px; background:#d0021b; color:white; margin:0;">✕</button>
-            </div>
-        `;
-
-        // Toggle state
-        item.querySelector('.toggle-btn').onclick = () => {
-            const taskIndex = tasks.indexOf(t);
-            tasks[taskIndex].done = !tasks[taskIndex].done;
-            DB.saveTasks(username, tasks);
-            app.render(); 
-        };
-
-        // NEW: Delete task
-        item.querySelector('.del-btn').onclick = () => {
-            const taskIndex = tasks.indexOf(t);
-            tasks.splice(taskIndex, 1); // Remove the item from the array
-            DB.saveTasks(username, tasks);
-            app.render();
-        };
-
-        if (t.done) {
-            completedCont.appendChild(item);
-        } else {
-            activeCont.appendChild(item);
-        }
-    });
-
-    const addBtn = div.querySelector('#add-t');
+    const canvas = div.querySelector('#task-canvas');
+    const shredder = div.querySelector('#shredder');
     const input = div.querySelector('#new-task');
 
-    // Logic for adding a task
-    const addTask = () => {
-        if (input.value.trim() !== "") {
-            tasks.push({ text: input.value, done: false });
-            DB.saveTasks(username, tasks);
-            app.render();
-        }
-    };
+    // Super barvičky pro sticky notes
+    const colors = ['#ffeb3b', '#ffc107', '#8bc34a', '#03a9f4', '#ff5722', '#e91e63'];
 
-    // Button click
-    addBtn.onclick = addTask;
-    
-    // NEW: Pressing "Enter" to add task
-    input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') addTask();
+    // Vykreslení všech neskartovaných úkolů na jejich uložených pozicích
+    tasks.forEach((t) => {
+        if (t.done) return; // Neskartované úkoly žijí na plátně
+
+        const note = document.createElement('div');
+        note.className = 'sticky-note';
+        
+        // Zajištění zpětné kompatibility pro staré úkoly (vygenerujeme jim data)
+        t.color = t.color || colors[Math.floor(Math.random() * colors.length)];
+        t.x = t.x !== undefined ? t.x : Math.random() * (window.innerWidth - 200) + 50;
+        t.y = t.y !== undefined ? t.y : Math.random() * (window.innerHeight - 200) + 50;
+        t.rot = t.rot !== undefined ? t.rot : (Math.random() - 0.5) * 40;
+
+        note.style.backgroundColor = t.color;
+        note.style.left = `${t.x}px`;
+        note.style.top = `${t.y}px`;
+        note.style.transform = `rotate(${t.rot}deg)`;
+        note.innerHTML = `<span>${t.text}</span>`;
+
+        // 🎯 DRAG & DROP LOGIKA
+        note.onmousedown = (e) => {
+            let startX = e.clientX;
+            let startY = e.clientY;
+            let initialX = parseFloat(note.style.left) || 0;
+            let initialY = parseFloat(note.style.top) || 0;
+
+            const onMouseMove = (moveEvent) => {
+                const dx = moveEvent.clientX - startX;
+                const dy = moveEvent.clientY - startY;
+                note.style.left = `${initialX + dx}px`;
+                note.style.top = `${initialY + dy}px`;
+
+                // Detekce kolize se skartovačkou
+                const shRect = shredder.getBoundingClientRect();
+                const noteRect = note.getBoundingClientRect();
+                
+                // Pokud je papírek "nad" skartovačkou, skartovačka zčervená a začne se třást
+                if (
+                    noteRect.right > shRect.left + 20 && 
+                    noteRect.left < shRect.right - 20 && 
+                    noteRect.bottom > shRect.top + 20 && 
+                    noteRect.top < shRect.bottom - 20
+                ) {
+                    shredder.classList.add('danger');
+                } else {
+                    shredder.classList.remove('danger');
+                }
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                
+                // Aktualizace pozice úkolu
+                t.x = parseFloat(note.style.left);
+                t.y = parseFloat(note.style.top);
+
+                // SKARTACE!
+                if (shredder.classList.contains('danger')) {
+                    shredder.classList.remove('danger');
+                    t.done = true; // Označíme jako hotový (skartovaný)
+                    DB.saveTasks(username, tasks);
+                    app.render(); // Zmizí z obrazovky
+                } else {
+                    // Jen se uložila nová pozice, pokud jsme ho neskartovali
+                    DB.saveTasks(username, tasks);
+                }
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+
+        canvas.appendChild(note);
     });
 
-    // Přidání nového úkolu
-    div.querySelector('#add-t').onclick = () => {
-        const input = div.querySelector('#new-task');
+    // Přidání nového úkolu (vygeneruje mu to náhodné hodnoty pro spawn)
+    const addTask = () => {
         if (input.value.trim() !== "") {
-            tasks.push({ text: input.value, done: false });
+            tasks.push({ 
+                text: input.value, 
+                done: false,
+                // Spawnne se náhodně blízko středu obrazovky
+                x: (window.innerWidth / 2) - 75 + (Math.random() - 0.5) * 200,
+                y: (window.innerHeight / 2) - 75 + (Math.random() - 0.5) * 200,
+                rot: (Math.random() - 0.5) * 50, // Náhodné naklonění
+                color: colors[Math.floor(Math.random() * colors.length)]
+            });
             DB.saveTasks(username, tasks);
             app.render();
         }
     };
     
-    // Odhlášení
+    div.querySelector('#add-t').onclick = addTask;
+    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
     div.querySelector('#logout').onclick = () => app.handleLogout();
 
     return div;
 }
-
 // Spuštění aplikace po načtení stránky
 window.onload = () => new TaskApp();

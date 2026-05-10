@@ -9,3 +9,84 @@ button { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: p
 .task-item { display: flex; justify-content: space-between; background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 4px; align-items: center; }
 .done { text-decoration: line-through; color: #888; }
 .error { color: #d0021b; font-size: 0.85em; margin-top: 5px; }
+
+/* --- NOVÁ ZÁBAVNÁ VRSTVA --- */
+#app-root {
+    background: transparent !important;
+    box-shadow: none !important;
+    max-width: 600px !important;
+    z-index: 100;
+}
+
+.main-ui {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    position: relative;
+    z-index: 100;
+}
+
+.sticky-note {
+    position: absolute;
+    width: 150px;
+    height: 150px;
+    padding: 15px;
+    box-shadow: 3px 5px 15px rgba(0,0,0,0.2);
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #222;
+    transition: transform 0.1s;
+    pointer-events: auto;
+    border-radius: 2px;
+}
+
+.sticky-note:active {
+    cursor: grabbing;
+    transform: scale(1.1) !important;
+    box-shadow: 5px 15px 30px rgba(0,0,0,0.3);
+    z-index: 999 !important;
+}
+
+.shredder {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 120px;
+    height: 120px;
+    background: #333;
+    border-radius: 50%;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1em;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    transition: 0.3s;
+    z-index: 50;
+}
+
+.shredder.danger {
+    transform: scale(1.3);
+    background: #d0021b;
+    box-shadow: 0 0 40px #d0021b;
+    animation: shake 0.3s infinite;
+}
+
+@keyframes shake {
+    0% { transform: scale(1.3) rotate(0deg); }
+    25% { transform: scale(1.3) rotate(5deg); }
+    50% { transform: scale(1.3) rotate(0deg); }
+    75% { transform: scale(1.3) rotate(-5deg); }
+    100% { transform: scale(1.3) rotate(0deg); }
+}
