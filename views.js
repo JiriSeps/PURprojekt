@@ -41,7 +41,7 @@ export function DashboardComponent(app) {
     const username = app.currentUser;
     const tasks = DB.getTasks(username);
     const div = document.createElement('div');
-    
+
     div.innerHTML = `
         <div style="position: relative; z-index: 10;">
             <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
@@ -95,7 +95,7 @@ export function DashboardComponent(app) {
     tasks.forEach((t) => {
         const item = document.createElement('div');
         item.className = 'task-item';
-        
+
         let formattedDeadline = "";
         if (t.deadline) {
             const dateParts = t.deadline.split('-');
@@ -106,6 +106,7 @@ export function DashboardComponent(app) {
             <span class="${t.done ? 'done' : ''}">${t.text}</span> 
             ${formattedDeadline ? `<span class="deadline" style="font-size: 0.85em; color: #ef4444; margin-left: 10px;">📅 ${formattedDeadline}</span>` : ''}
             <div style="display:flex; gap: 5px; margin-left: 15px;">
+                <button class="fav-btn" style="width:auto; padding:5px 10px; background:#eab308; color:white; margin:0;" title="Přidat do létajících nápadů">⭐</button>
                 <button class="toggle-btn" style="width:auto; padding:5px 10px; background:${t.done ? '#888' : '#28a745'}; color:white; margin:0;">
                     ${t.done ? 'Vrátit' : 'Hotovo ✓'}
                 </button>
@@ -113,11 +114,17 @@ export function DashboardComponent(app) {
             </div>
         `;
 
+        // adding favourites
+        item.querySelector('.fav-btn').onclick = () => {
+            DB.addFavorite(t.text);
+            alert(`Nápad "${t.text}" byl přidán mezi oblíbené a příště poletí kolem!`);
+        };
+
         item.querySelector('.toggle-btn').onclick = () => {
             const taskIndex = tasks.indexOf(t);
             tasks[taskIndex].done = !tasks[taskIndex].done;
             DB.saveTasks(username, tasks);
-            app.render(); 
+            app.render();
         };
 
         item.querySelector('.del-btn').onclick = () => {
@@ -126,7 +133,6 @@ export function DashboardComponent(app) {
             DB.saveTasks(username, tasks);
             app.render();
         };
-
         if (t.done) completedCont.appendChild(item);
         else activeCont.appendChild(item);
     });
@@ -152,16 +158,21 @@ export function DashboardComponent(app) {
         if (draggedIdeaText) {
             tasks.push({ text: draggedIdeaText, done: false, deadline: "" });
             DB.saveTasks(username, tasks);
-            app.render(); 
+            app.render();
         }
     });
 
-    const canvas = div.querySelector('#ideas-canvas');
+const canvas = div.querySelector('#ideas-canvas');
     fetch('ideas.json')
         .then(response => response.json())
-        .then(funnyIdeas => {
+        .then(jsonIdeas => {
+            // json favourites join
+            const userFavorites = DB.getFavorites();
+            const allIdeas = [...jsonIdeas, ...userFavorites];
+
             for(let i = 0; i < 4; i++) {
-                const ideaText = funnyIdeas[Math.floor(Math.random() * funnyIdeas.length)];
+                // allIdeas pole
+                const ideaText = allIdeas[Math.floor(Math.random() * allIdeas.length)];
                 const ideaEl = document.createElement('div');
                 ideaEl.className = 'floating-idea';
                 ideaEl.innerText = ideaText;
@@ -180,6 +191,20 @@ export function DashboardComponent(app) {
                     e.dataTransfer.setData('text/plain', ideaText);
                 });
                 canvas.appendChild(ideaEl);
+            }
+        })
+        .catch(error => {
+            // in case .json doesnt work (CORS)
+            // user favourites atleast
+            console.error("JSON se nenačetl, zkouším načíst alespoň oblíbené z prohlížeče.", error);
+            const userFavorites = DB.getFavorites();
+            if (userFavorites.length > 0) {
+                 const ideaEl = document.createElement('div');
+                 ideaEl.className = 'floating-idea';
+                 ideaEl.innerText = userFavorites[Math.floor(Math.random() * userFavorites.length)];
+                 ideaEl.style.left = `10vw`;
+                 ideaEl.style.top = `50vh`;
+                 canvas.appendChild(ideaEl);
             }
         })
         .catch(error => console.error("Jejda, nápady se nepodařilo načíst:", error));
